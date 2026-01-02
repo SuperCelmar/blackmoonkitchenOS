@@ -1,0 +1,5 @@
+{
+  "name": "NoodleOrder - Sunday Clone",
+  "description": "A multi-role restaurant ordering system (Client, Waiter, Kitchen, Admin) tailored for an Asian noodle restaurant with bilingual support and AI menu assistance.",
+  "requestFramePermissions": []
+}
