@@ -2,26 +2,123 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <title>NoodleOrder System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com" rel="preconnect"/>
+    <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Noto+Sans:wght@400;500;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lato:wght@300;400;700&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
     <script>
       tailwind.config = {
         darkMode: 'class',
         theme: {
           extend: {
             fontFamily: {
-              sans: ['Inter', 'Noto Sans SC', 'sans-serif'],
+              sans: ['Lato', 'Inter', 'Noto Sans SC', 'sans-serif'],
+              display: ['Playfair Display', 'Plus Jakarta Sans', 'serif'],
+              body: ['Lato', 'Noto Sans', 'sans-serif'],
+            },
+            colors: {
+                "primary": "#8B1E1E", 
+                "primary-dark": "#6b1616",
+                "primary-hover": "#6b1616",
+                "accent-gold": "#D4AF37",
+                "background-light": "#FFFAF0",
+                "background-dark": "#1a1a1a",
+                "surface-light": "#ffffff",
+                "surface-dark": "#2d2d2d",
+            },
+            boxShadow: {
+                'soft': '0 4px 20px -2px rgba(0, 0, 0, 0.05)',
+                'float': '0 10px 40px -10px rgba(139, 30, 30, 0.15)',
+                'apple': '0 4px 24px -1px rgba(0, 0, 0, 0.06)',
+                'glow': '0 0 20px -5px var(--tw-shadow-color)',
+            },
+            animation: {
+                'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
             }
           }
         }
       }
     </script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
       body {
-        font-family: 'Inter', 'Noto Sans SC', sans-serif;
+        font-family: 'Lato', 'Noto Sans SC', sans-serif;
+        min-height: 100dvh;
+        -webkit-tap-highlight-color: transparent;
       }
+      .no-scrollbar::-webkit-scrollbar {
+          display: none;
+      }
+      .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
+      .glass-effect {
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          background-color: rgba(255, 255, 255, 0.85);
+      }
+      .dark .glass-effect {
+          background-color: rgba(45, 45, 45, 0.85);
+      }
+      .material-symbols-outlined {
+        font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+      }
+      
+      /* Corner patterns for order cards */
+      .corner-pattern {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            pointer-events: none;
+            opacity: 0.5;
+        }
+        .corner-tl {
+            top: 4px;
+            left: 4px;
+            border-top: 2px solid #8B1E1E;
+            border-left: 2px solid #8B1E1E;
+        }
+        .corner-tr {
+            top: 4px;
+            right: 4px;
+            border-top: 2px solid #8B1E1E;
+            border-right: 2px solid #8B1E1E;
+        }
+        .corner-bl {
+            bottom: 4px;
+            left: 4px;
+            border-bottom: 2px solid #8B1E1E;
+            border-left: 2px solid #8B1E1E;
+        }
+        .corner-br {
+            bottom: 4px;
+            right: 4px;
+            border-bottom: 2px solid #8B1E1E;
+            border-right: 2px solid #8B1E1E;
+        }
+        .dark .corner-tl, .dark .corner-tr, .dark .corner-bl, .dark .corner-br {
+            border-color: #D4AF37;
+        }
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        .drag-ghost {
+            opacity: 0.5;
+            border: 2px dashed #8B1E1E;
+        }
     </style>
   <script type="importmap">
 {
@@ -30,6 +127,7 @@
     "react/": "https://esm.sh/react@^19.2.3/",
     "react": "https://esm.sh/react@^19.2.3",
     "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "react-router-dom": "https://esm.sh/react-router-dom@^6.22.3",
     "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
   }
 }

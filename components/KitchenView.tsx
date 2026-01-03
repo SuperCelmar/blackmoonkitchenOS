@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { Order, OrderStatus } from '../types';
-import { CheckSquare, Bell } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Order, OrderStatus, Category, OrderItem, OrderType } from '../types';
+import { Bell } from 'lucide-react';
 
 interface KitchenViewProps {
   orders: Order[];
@@ -12,7 +12,7 @@ const KitchenView: React.FC<KitchenViewProps> = ({ orders, onUpdateStatus }) => 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Auto-select first if none selected
-  React.useEffect(() => {
+  useEffect(() => {
     if (!selectedId && kitchenOrders.length > 0) {
         setSelectedId(kitchenOrders[0].id);
     }
@@ -20,87 +20,143 @@ const KitchenView: React.FC<KitchenViewProps> = ({ orders, onUpdateStatus }) => 
 
   const focusedOrder = kitchenOrders.find(o => o.id === selectedId) || kitchenOrders[0];
 
+  const renderItemCard = (item: OrderItem, idx: number) => (
+    <div key={idx} className="bg-zinc-800 p-5 rounded-xl border-l-4 border-yellow-500 shadow-lg flex flex-col justify-between min-h-[140px]">
+        <div className="flex justify-between items-start border-b border-zinc-700/50 pb-3 mb-3">
+            <span className="text-5xl font-black text-yellow-500 tracking-tighter">{item.menuItem.code}</span>
+            <span className="text-5xl font-black text-white">x{item.quantity}</span>
+        </div>
+        <div>
+            <h4 className="text-3xl font-bold text-white leading-tight mb-1">{item.menuItem.nameCN}</h4>
+            <p className="text-lg text-zinc-500 font-medium truncate">{item.menuItem.nameFR}</p>
+        </div>
+    </div>
+  );
+
+  const getTableLabel = (order: Order) => {
+      if (order.type === OrderType.TAKEAWAY) {
+          return "外卖";
+      }
+      return `Table ${order.tableNumber}`;
+  }
+
+  const renderOrderDetails = () => {
+      if (!focusedOrder) return null;
+
+      const starters = focusedOrder.items.filter(i => i.menuItem.category === Category.STARTER);
+      const mains = focusedOrder.items.filter(i => i.menuItem.category === Category.MAIN);
+      
+      const hasKitchenItems = starters.length > 0 || mains.length > 0;
+
+      return (
+        <>
+            <div className="p-6 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center shadow-md z-10">
+                <div>
+                    <h2 className="text-4xl font-bold mb-1 text-white">{getTableLabel(focusedOrder)}</h2>
+                    <span className="text-zinc-400 font-mono text-lg">#{focusedOrder.id.slice(-4)}</span>
+                </div>
+            </div>
+            
+            <div className="flex-1 p-8 overflow-y-auto bg-zinc-900">
+                {!hasKitchenItems && (
+                    <div className="flex flex-col items-center justify-center h-full text-zinc-600 space-y-4">
+                        <span className="text-6xl opacity-20">☕️ 🍰</span>
+                        <p className="text-xl">Drinks & Desserts only (handled by waiter)</p>
+                    </div>
+                )}
+
+                {starters.length > 0 && (
+                    <div className="mb-10">
+                        <h3 className="text-2xl font-black text-zinc-500 mb-6 flex items-center gap-4">
+                            <span>ENTRÉES (前菜)</span>
+                            <span className="text-sm bg-zinc-800 px-3 py-1 rounded-full text-zinc-400">{starters.reduce((a,b) => a+b.quantity, 0)} items</span>
+                            <div className="h-px bg-zinc-800 flex-1"></div>
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                            {starters.map(renderItemCard)}
+                        </div>
+                    </div>
+                )}
+
+                {mains.length > 0 && (
+                    <div className="mb-8">
+                        <h3 className="text-2xl font-black text-zinc-500 mb-6 flex items-center gap-4">
+                            <span>PLATS (主菜)</span>
+                            <span className="text-sm bg-zinc-800 px-3 py-1 rounded-full text-zinc-400">{mains.reduce((a,b) => a+b.quantity, 0)} items</span>
+                            <div className="h-px bg-zinc-800 flex-1"></div>
+                        </h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                            {mains.map(renderItemCard)}
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            <div className="p-6 border-t border-zinc-700 bg-zinc-800 z-10">
+                <button 
+                    onClick={() => {
+                        onUpdateStatus(focusedOrder.id, OrderStatus.READY);
+                        setSelectedId(null);
+                    }}
+                    className="w-full bg-green-600 hover:bg-green-500 active:bg-green-700 transition-colors text-white py-5 rounded-xl text-2xl font-bold shadow-lg flex items-center justify-center gap-4 group"
+                >
+                    <Bell size={32} className="group-hover:animate-bounce"/>
+                    <span>READY / 完成</span>
+                </button>
+            </div>
+        </>
+      );
+  };
+
   return (
     <div className="flex h-screen bg-zinc-900 text-white overflow-hidden font-sans">
       {/* Sidebar Queue */}
-      <div className="w-1/3 border-r border-zinc-700 flex flex-col">
-        <div className="p-4 border-b border-zinc-700 bg-zinc-800">
-            <h1 className="text-2xl font-bold text-yellow-500">Queue (队列) - {kitchenOrders.length}</h1>
+      <div className="w-1/3 max-w-sm border-r border-zinc-700 flex flex-col bg-zinc-900/50">
+        <div className="p-4 border-b border-zinc-700 bg-zinc-800/50 backdrop-blur-sm">
+            <h1 className="text-2xl font-bold text-yellow-500 flex items-center gap-2">
+                Queue (队列) 
+                <span className="bg-yellow-500/20 text-yellow-500 px-2 py-0.5 rounded-full text-sm">{kitchenOrders.length}</span>
+            </h1>
         </div>
         <div className="flex-1 overflow-y-auto">
-            {kitchenOrders.map(order => (
-                <div 
-                    key={order.id}
-                    onClick={() => setSelectedId(order.id)}
-                    className={`p-5 border-b border-zinc-700 cursor-pointer transition-colors ${
-                        selectedId === order.id ? 'bg-blue-900' : 'hover:bg-zinc-800'
-                    }`}
-                >
-                    <div className="flex justify-between items-center mb-2">
-                        <span className="text-xl font-bold">Table {order.tableNumber}</span>
-                        <span className="text-sm text-zinc-400">{new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+            {kitchenOrders.map(order => {
+                const itemCount = order.items.filter(i => i.menuItem.category === Category.STARTER || i.menuItem.category === Category.MAIN).reduce((acc, i) => acc + i.quantity, 0);
+                return (
+                    <div 
+                        key={order.id}
+                        onClick={() => setSelectedId(order.id)}
+                        className={`p-5 border-b border-zinc-700/50 cursor-pointer transition-all duration-200 ${
+                            selectedId === order.id ? 'bg-blue-900/50 border-l-4 border-l-blue-500' : 'hover:bg-zinc-800/50 border-l-4 border-l-transparent'
+                        }`}
+                    >
+                        <div className="flex justify-between items-center mb-2">
+                            <span className={`text-xl font-bold ${selectedId === order.id ? 'text-white' : 'text-zinc-300'}`}>{getTableLabel(order)}</span>
+                            <span className="text-sm text-zinc-500 font-mono">{new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                             <span className="text-zinc-400 text-sm">#{order.id.slice(-4)}</span>
+                             <span className={`px-2 py-0.5 rounded text-xs font-bold ${itemCount > 0 ? 'bg-zinc-700 text-zinc-300' : 'bg-zinc-800 text-zinc-600'}`}>
+                                {itemCount} items
+                             </span>
+                        </div>
                     </div>
-                    <div className="text-zinc-400">
-                        {order.items.reduce((acc, i) => acc + i.quantity, 0)} items
-                    </div>
-                </div>
-            ))}
+                );
+            })}
             {kitchenOrders.length === 0 && (
-                <div className="p-8 text-center text-zinc-500">
-                    No orders / 暂无订单
+                <div className="p-12 text-center text-zinc-600 flex flex-col items-center">
+                    <span className="text-4xl mb-2 opacity-50">😴</span>
+                    <span>No orders pending</span>
                 </div>
             )}
         </div>
       </div>
 
       {/* Main Focus View */}
-      <div className="w-2/3 flex flex-col bg-zinc-900">
-         {focusedOrder ? (
-             <>
-                <div className="p-6 bg-zinc-800 border-b border-zinc-700 flex justify-between items-center">
-                    <div>
-                        <h2 className="text-4xl font-bold mb-1">Table {focusedOrder.tableNumber}</h2>
-                        <span className="text-zinc-400">Order #{focusedOrder.id.slice(-4)}</span>
-                    </div>
-                    <div className="text-right">
-                         <div className="text-yellow-400 font-bold text-xl">VALIDATED / 已确认</div>
-                    </div>
-                </div>
-                
-                <div className="flex-1 p-6 overflow-y-auto">
-                    <div className="space-y-4">
-                        {focusedOrder.items.map((item, idx) => (
-                            <div key={idx} className="bg-zinc-800 p-4 rounded flex justify-between items-center border-l-8 border-yellow-500">
-                                <div>
-                                    {/* Chinese name prominent for kitchen */}
-                                    <h3 className="text-3xl font-bold text-white mb-1">{item.menuItem.nameCN}</h3>
-                                    <p className="text-xl text-zinc-400">{item.menuItem.nameFR}</p>
-                                    <p className="text-sm text-zinc-500 mt-1">Code: {item.menuItem.code}</p>
-                                </div>
-                                <div className="text-5xl font-bold text-yellow-500">
-                                    x{item.quantity}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-
-                <div className="p-6 border-t border-zinc-700 bg-zinc-800">
-                    <button 
-                        onClick={() => {
-                            onUpdateStatus(focusedOrder.id, OrderStatus.READY);
-                            setSelectedId(null);
-                        }}
-                        className="w-full bg-green-600 hover:bg-green-700 text-white py-6 rounded-lg text-3xl font-bold shadow-lg flex items-center justify-center gap-4"
-                    >
-                        <Bell size={40}/>
-                        READY / 完成
-                    </button>
-                </div>
-             </>
-         ) : (
-             <div className="flex-1 flex items-center justify-center text-zinc-600">
-                 <h2 className="text-3xl">Waiting for orders...</h2>
+      <div className="flex-1 flex flex-col bg-zinc-900 relative">
+         {focusedOrder ? renderOrderDetails() : (
+             <div className="flex-1 flex flex-col items-center justify-center text-zinc-700">
+                 <Bell size={64} className="mb-4 opacity-20"/>
+                 <h2 className="text-3xl font-bold opacity-40">Waiting for orders...</h2>
              </div>
          )}
       </div>
