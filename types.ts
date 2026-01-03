@@ -1,3 +1,18 @@
+// Re-export types from Supabase client for consistency
+export type { 
+  UserRole, 
+  OrderStatus, 
+  OrderType, 
+  PaymentMethod,
+  Profile,
+  Category,
+  MenuItem as MenuItemDB,
+  Order as OrderDB,
+  OrderItem as OrderItemDB,
+  OrderWithItems
+} from './services/supabaseClient';
+
+// Legacy enums for backward compatibility
 export enum Category {
   STARTER = 'STARTER',
   MAIN = 'MAIN',
@@ -31,29 +46,35 @@ export interface Table {
   type: 'RECT' | 'ROUND';
 }
 
+// Frontend-friendly MenuItem (adapted from DB)
 export interface MenuItem {
   id: string;
-  code: string; // Short code for waiters/kitchen
+  code: string;
   nameFR: string;
-  nameCN: string;
-  descriptionFR: string;
+  nameCN: string | null;
+  descriptionFR: string | null;
   price: number;
-  category: Category;
-  image: string;
+  category: string | null; // category slug or id
+  image: string | null;
+  isPopular: boolean;
+  isAvailable: boolean;
 }
 
+// Frontend OrderItem
 export interface OrderItem {
   menuItem: MenuItem;
   quantity: number;
   notes?: string;
 }
 
+// Frontend Order (adapted from DB)
 export interface Order {
   id: string;
-  tableNumber: string; // If takeaway, this might be a pickup number or empty
+  tableNumber: string | null;
   type: OrderType;
   items: OrderItem[];
   status: OrderStatus;
-  paymentMethod?: PaymentMethod;
+  paymentMethod?: PaymentMethod | null;
   createdAt: number;
+  totalAmount?: number;
 }

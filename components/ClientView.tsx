@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { MemoryRouter, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { MenuItem, OrderItem, Category, PaymentMethod, OrderType } from '../types';
+import { MenuItem, OrderItem, PaymentMethod, OrderType } from '../types';
+import { fetchActiveOrder } from '../services/menuService';
 
 interface ClientViewProps {
   menu: MenuItem[];
@@ -140,7 +141,11 @@ const MenuScreen = ({
                         <div key={item.id} className="group flex flex-col p-3 bg-surface-light dark:bg-surface-dark rounded-[24px] shadow-sm active:scale-[0.99] transition-all duration-300 border border-white/50 dark:border-white/5">
                             <div className="flex gap-4">
                                 <div className="h-28 w-28 shrink-0 overflow-hidden rounded-2xl bg-gray-100 relative shadow-inner">
-                                    <div className="h-full w-full bg-cover bg-center transition-transform duration-700 group-hover:scale-105" style={{backgroundImage: `url("${item.image}")`}}></div>
+                                    {item.image ? (
+                                        <div className="h-full w-full bg-cover bg-center transition-transform duration-700 group-hover:scale-105" style={{backgroundImage: `url("${item.image}")`}}></div>
+                                    ) : (
+                                        <div className="h-full w-full bg-gray-200 flex items-center justify-center text-gray-400 text-xs">No image</div>
+                                    )}
                                 </div>
                                 <div className="flex flex-1 flex-col py-1 justify-between">
                                     <div>
@@ -239,7 +244,11 @@ const ConfirmationScreen = ({ cart }: { cart: OrderItem[] }) => {
                         {cart.map((item) => (
                             <div key={item.menuItem.id} className="flex gap-4 group">
                                 <div className="relative w-[72px] h-[72px] shrink-0 rounded-2xl overflow-hidden bg-slate-100 dark:bg-slate-700 shadow-sm">
-                                    <img alt={item.menuItem.nameFR} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" src={item.menuItem.image} />
+                                    {item.menuItem.image ? (
+                                        <img alt={item.menuItem.nameFR} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" src={item.menuItem.image} />
+                                    ) : (
+                                        <div className="w-full h-full bg-slate-200 dark:bg-slate-600 flex items-center justify-center text-slate-400 text-xs">No image</div>
+                                    )}
                                     <div className="absolute bottom-0 right-0 bg-slate-900/90 backdrop-blur-sm text-white text-[10px] font-bold px-1.5 py-0.5 rounded-tl-lg">x{item.quantity}</div>
                                 </div>
                                 <div className="flex-1 py-0.5 flex flex-col justify-between">
@@ -433,10 +442,38 @@ const WaitingScreen = ({ cart }: { cart: OrderItem[] }) => {
 
 // --- Main Client View Wrapper ---
 
-const ClientView: React.FC<ClientViewProps> = ({ menu, onSubmitOrder }) => {
-    // State managed here
+// Inner component that uses router hooks
+const ClientViewInner: React.FC<{ menu: MenuItem[], onSubmitOrder: (items: OrderItem[], paymentMethod: PaymentMethod, type: OrderType) => void }> = ({ menu, onSubmitOrder }) => {
+    const navigate = useNavigate();
     const [cart, setCart] = useState<OrderItem[]>([]);
     const [orderType, setOrderType] = useState<OrderType>(OrderType.DINE_IN);
+    const [isCheckingOrder, setIsCheckingOrder] = useState(true);
+
+    // Check for active order on mount
+    useEffect(() => {
+        const checkActiveOrder = async () => {
+            try {
+                const activeOrder = await fetchActiveOrder();
+                if (activeOrder) {
+                    // Restore cart and order type from active order
+                    setCart(activeOrder.items);
+                    setOrderType(activeOrder.type);
+                    // Navigate to waiting screen
+                    navigate('/waiting', { replace: true });
+                }
+            } catch (error: any) {
+                // Silently handle auth errors - just log and continue
+                // This is expected if anonymous auth is disabled
+                if (!error?.message?.includes('anonymous') && !error?.message?.includes('auth')) {
+                    console.error('Error checking for active order:', error);
+                }
+            } finally {
+                setIsCheckingOrder(false);
+            }
+        };
+
+        checkActiveOrder();
+    }, [navigate]);
 
     const addToCart = (item: MenuItem) => {
         setCart(prev => {
@@ -462,45 +499,68 @@ const ClientView: React.FC<ClientViewProps> = ({ menu, onSubmitOrder }) => {
         onSubmitOrder(cart, paymentMethod, orderType);
     };
 
-    const starters = useMemo(() => menu.filter(m => m.category === Category.STARTER), [menu]);
-    const mains = useMemo(() => menu.filter(m => m.category === Category.MAIN), [menu]);
+    // Filter menu items by category slug
+    // Entrées (starters) and Salades are shown in starters section
+    const starters = useMemo(() => 
+      menu.filter(m => m.category === 'entrees' || m.category === 'salades'), 
+      [menu]
+    );
+    // All other categories (Pho, Udon, Bols, Riz) are shown in mains section
+    const mains = useMemo(() => 
+      menu.filter(m => m.category && !['entrees', 'salades'].includes(m.category)), 
+      [menu]
+    );
+
+    if (isCheckingOrder) {
+        return (
+            <div className="flex items-center justify-center h-full">
+                <div className="text-lg">Chargement...</div>
+            </div>
+        );
+    }
 
     return (
+        <Routes>
+            <Route path="/" element={<HomeScreen orderType={orderType} setOrderType={setOrderType} />} />
+            <Route 
+                path="/starters" 
+                element={
+                    <MenuScreen 
+                        title="Entrées" 
+                        items={starters} 
+                        cart={cart}
+                        addToCart={addToCart}
+                        removeFromCart={removeFromCart}
+                        nextLink="/mains"
+                        prevLink="/"
+                    />
+                } 
+            />
+            <Route 
+                path="/mains" 
+                element={
+                    <MenuScreen 
+                        title="Plats" 
+                        items={mains} 
+                        cart={cart}
+                        addToCart={addToCart}
+                        removeFromCart={removeFromCart}
+                        nextLink="/confirmation"
+                        prevLink="/starters"
+                    />
+                } 
+            />
+            <Route path="/confirmation" element={<ConfirmationScreen cart={cart} />} />
+            <Route path="/payment" element={<PaymentScreen onSubmit={handleOrderSubmit} />} />
+            <Route path="/waiting" element={<WaitingScreen cart={cart} />} />
+        </Routes>
+    );
+};
+
+const ClientView: React.FC<ClientViewProps> = ({ menu, onSubmitOrder }) => {
+    return (
         <MemoryRouter>
-            <Routes>
-                <Route path="/" element={<HomeScreen orderType={orderType} setOrderType={setOrderType} />} />
-                <Route 
-                    path="/starters" 
-                    element={
-                        <MenuScreen 
-                            title="Entrées" 
-                            items={starters} 
-                            cart={cart}
-                            addToCart={addToCart}
-                            removeFromCart={removeFromCart}
-                            nextLink="/mains"
-                            prevLink="/"
-                        />
-                    } 
-                />
-                <Route 
-                    path="/mains" 
-                    element={
-                        <MenuScreen 
-                            title="Plats" 
-                            items={mains} 
-                            cart={cart}
-                            addToCart={addToCart}
-                            removeFromCart={removeFromCart}
-                            nextLink="/confirmation"
-                            prevLink="/starters"
-                        />
-                    } 
-                />
-                <Route path="/confirmation" element={<ConfirmationScreen cart={cart} />} />
-                <Route path="/payment" element={<PaymentScreen onSubmit={handleOrderSubmit} />} />
-                <Route path="/waiting" element={<WaitingScreen cart={cart} />} />
-            </Routes>
+            <ClientViewInner menu={menu} onSubmitOrder={onSubmitOrder} />
         </MemoryRouter>
     );
 };

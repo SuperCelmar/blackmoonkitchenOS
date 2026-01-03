@@ -1,11 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MenuItem, Order, OrderItem, OrderStatus, PaymentMethod, Table, OrderType } from './types';
-import { INITIAL_MENU, INITIAL_TABLES } from './constants';
+import { Category } from './services/supabaseClient';
+import { INITIAL_TABLES } from './constants';
 import ClientView from './components/ClientView';
 import WaiterView from './components/WaiterView';
 import KitchenView from './components/KitchenView';
 import AdminView from './components/AdminView';
 import { ChefHat, User, ClipboardList, Settings } from 'lucide-react';
+import { 
+  fetchMenuItems,
+  fetchAllMenuItems,
+  fetchCategories,
+  updateMenuItems,
+  createOrder, 
+  fetchOrdersWithItems, 
+  updateOrderStatus, 
+  updateOrderTable,
+  subscribeToOrders 
+} from './services/menuService';
 
 enum View {
   CLIENT = 'CLIENT',
@@ -16,47 +28,148 @@ enum View {
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<View>(View.CLIENT);
-  const [menu, setMenu] = useState<MenuItem[]>(INITIAL_MENU);
+  const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [adminMenu, setAdminMenu] = useState<MenuItem[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [tables, setTables] = useState<Table[]>(INITIAL_TABLES);
+  const [loading, setLoading] = useState(true);
+
+  // Load menu items and categories on mount (no authentication required)
+  useEffect(() => {
+    const initialize = async () => {
+      try {
+        // Menu items and categories are publicly readable, no auth needed
+        const [items, cats, adminItems] = await Promise.all([
+          fetchMenuItems(),
+          fetchCategories(),
+          fetchAllMenuItems()
+        ]);
+        setMenu(items);
+        setCategories(cats);
+        setAdminMenu(adminItems);
+      } catch (error) {
+        console.error('Failed to load menu:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    initialize();
+  }, []);
+
+  // Load orders on mount and subscribe to changes
+  useEffect(() => {
+    const loadOrders = async () => {
+      try {
+        const allOrders = await fetchOrdersWithItems();
+        setOrders(allOrders);
+      } catch (error) {
+        console.error('Failed to load orders:', error);
+      }
+    };
+    loadOrders();
+
+    // Subscribe to order changes
+    const unsubscribe = subscribeToOrders((order) => {
+      setOrders(prev => {
+        const existingIndex = prev.findIndex(o => o.id === order.id);
+        if (existingIndex >= 0) {
+          const updated = [...prev];
+          updated[existingIndex] = order;
+          return updated;
+        } else {
+          return [order, ...prev];
+        }
+      });
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   // Handle Client Order
-  const handleClientSubmit = (items: OrderItem[], paymentMethod: PaymentMethod, type: OrderType) => {
-    const newOrder: Order = {
-      id: Math.random().toString(36).substr(2, 9).toUpperCase(),
-      tableNumber: type === OrderType.DINE_IN ? '?' : 'Takeaway', // Waiter will assign if Dine-in and table not known
-      type,
-      items,
-      status: OrderStatus.PENDING,
-      paymentMethod,
-      createdAt: Date.now(),
-    };
-    setOrders(prev => [...prev, newOrder]);
+  const handleClientSubmit = async (items: OrderItem[], paymentMethod: PaymentMethod, type: OrderType) => {
+    try {
+      const tableNumber = type === OrderType.DINE_IN ? null : 'Takeaway';
+      await createOrder(items, paymentMethod, type, tableNumber);
+      // Order will be added via subscription
+    } catch (error: any) {
+      console.error('Failed to create order:', error);
+      // Provide more specific error message if auth-related
+      if (error?.message?.includes('anonymous') || error?.message?.includes('auth')) {
+        alert('Erreur d\'authentification. Veuillez contacter le support.');
+      } else {
+        alert('Erreur lors de la création de la commande. Veuillez réessayer.');
+      }
+    }
   };
 
   // Handle Waiter Manual Order
-  const handleWaiterCreateOrder = (items: OrderItem[], paymentMethod: PaymentMethod, type: OrderType, tableNum: string) => {
-     const newOrder: Order = {
-        id: Math.random().toString(36).substr(2, 9).toUpperCase(),
-        tableNumber: tableNum || '?',
-        type,
-        items,
-        status: OrderStatus.VALIDATED, // Waiter created means auto-validated
-        paymentMethod,
-        createdAt: Date.now(),
-     };
-     setOrders(prev => [...prev, newOrder]);
+  const handleWaiterCreateOrder = async (items: OrderItem[], paymentMethod: PaymentMethod, type: OrderType, tableNum: string) => {
+    try {
+      const order = await createOrder(items, paymentMethod, type, tableNum || null);
+      // Auto-validate waiter orders
+      await updateOrderStatus(order.id, OrderStatus.VALIDATED);
+      // Order will be updated via subscription
+    } catch (error: any) {
+      console.error('Failed to create waiter order:', error);
+      // Provide more specific error message if auth-related
+      if (error?.message?.includes('anonymous') || error?.message?.includes('auth')) {
+        alert('Erreur d\'authentification. Veuillez contacter le support.');
+      } else {
+        alert('Erreur lors de la création de la commande. Veuillez réessayer.');
+      }
+    }
   };
 
-  const handleStatusUpdate = (orderId: string, status: OrderStatus) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+  const handleStatusUpdate = async (orderId: string, status: OrderStatus) => {
+    try {
+      await updateOrderStatus(orderId, status);
+      // Order will be updated via subscription
+    } catch (error) {
+      console.error('Failed to update order status:', error);
+      alert('Erreur lors de la mise à jour du statut. Veuillez réessayer.');
+    }
   };
 
-  const handleAssignTable = (orderId: string, tableLabel: string) => {
-      setOrders(prev => prev.map(o => o.id === orderId ? { ...o, tableNumber: tableLabel } : o));
+  const handleAssignTable = async (orderId: string, tableLabel: string) => {
+    try {
+      await updateOrderTable(orderId, tableLabel);
+      // Order will be updated via subscription
+    } catch (error) {
+      console.error('Failed to assign table:', error);
+      alert('Erreur lors de l\'attribution de la table. Veuillez réessayer.');
+    }
+  };
+
+  // Handle menu update from admin panel
+  const handleUpdateMenu = async (updatedMenu: MenuItem[]) => {
+    try {
+      await updateMenuItems(updatedMenu);
+      // Reload both admin menu and public menu
+      const [items, adminItems] = await Promise.all([
+        fetchMenuItems(),
+        fetchAllMenuItems()
+      ]);
+      setMenu(items);
+      setAdminMenu(adminItems);
+      alert('Menu mis à jour avec succès!');
+    } catch (error) {
+      console.error('Failed to update menu:', error);
+      alert('Erreur lors de la mise à jour du menu. Veuillez réessayer.');
+    }
   };
 
   const renderView = () => {
+    if (loading) {
+      return (
+        <div className="flex items-center justify-center h-full">
+          <div className="text-lg">Chargement...</div>
+        </div>
+      );
+    }
+
     switch (currentView) {
       case View.CLIENT:
         return <ClientView menu={menu} onSubmitOrder={handleClientSubmit} />;
@@ -75,7 +188,7 @@ const App: React.FC = () => {
       case View.KITCHEN:
         return <KitchenView orders={orders} onUpdateStatus={handleStatusUpdate} />;
       case View.ADMIN:
-        return <AdminView menu={menu} onUpdateMenu={setMenu} />;
+        return <AdminView menu={adminMenu} categories={categories} onUpdateMenu={handleUpdateMenu} />;
       default:
         return <div>Error</div>;
     }

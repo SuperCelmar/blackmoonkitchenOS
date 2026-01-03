@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Order, OrderStatus, Category, OrderItem, OrderType } from '../types';
+import { Order, OrderStatus, OrderItem, OrderType } from '../types';
 import { Bell } from 'lucide-react';
 
 interface KitchenViewProps {
@@ -43,8 +43,13 @@ const KitchenView: React.FC<KitchenViewProps> = ({ orders, onUpdateStatus }) => 
   const renderOrderDetails = () => {
       if (!focusedOrder) return null;
 
-      const starters = focusedOrder.items.filter(i => i.menuItem.category === Category.STARTER);
-      const mains = focusedOrder.items.filter(i => i.menuItem.category === Category.MAIN);
+      // Filter by category slugs: entrees and salades are starters, others are mains
+      const starters = focusedOrder.items.filter(i => 
+        i.menuItem.category === 'entrees' || i.menuItem.category === 'salades'
+      );
+      const mains = focusedOrder.items.filter(i => 
+        i.menuItem.category && !['entrees', 'salades'].includes(i.menuItem.category)
+      );
       
       const hasKitchenItems = starters.length > 0 || mains.length > 0;
 
@@ -120,7 +125,11 @@ const KitchenView: React.FC<KitchenViewProps> = ({ orders, onUpdateStatus }) => 
         </div>
         <div className="flex-1 overflow-y-auto">
             {kitchenOrders.map(order => {
-                const itemCount = order.items.filter(i => i.menuItem.category === Category.STARTER || i.menuItem.category === Category.MAIN).reduce((acc, i) => acc + i.quantity, 0);
+                const itemCount = order.items.filter(i => 
+                  i.menuItem.category === 'entrees' || 
+                  i.menuItem.category === 'salades' || 
+                  (i.menuItem.category && !['entrees', 'salades'].includes(i.menuItem.category))
+                ).reduce((acc, i) => acc + i.quantity, 0);
                 return (
                     <div 
                         key={order.id}
