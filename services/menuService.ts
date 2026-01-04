@@ -1,5 +1,6 @@
 import { supabase, MenuItemDB, Category, OrderDB, OrderItemDB, OrderWithItems, ensureAnonymousAuth } from './supabaseClient';
 import { MenuItem, Order, OrderItem, OrderStatus, OrderType, PaymentMethod } from '../types';
+import { getOrCreateSessionId, getSessionId } from './sessionService';
 
 // Convert DB MenuItem to frontend MenuItem
 export function dbMenuItemToFrontend(item: MenuItemDB, categorySlug?: string | null): MenuItem {
@@ -177,21 +178,15 @@ export async function createOrder(
   orderType: OrderType,
   tableNumber?: string | null
 ): Promise<OrderDB> {
-  // Try to ensure user is authenticated (anonymous or regular)
-  // If anonymous auth is disabled, we'll proceed without user ID
+  // Check if user is authenticated (regular user, not anonymous)
   let userId: string | null = null;
-  try {
-    userId = await ensureAnonymousAuth();
-  } catch (authError: any) {
-    // If anonymous auth is disabled, log warning but continue
-    // The order will be created without a user association
-    console.warn('Anonymous authentication disabled or failed:', authError.message);
-    // Check if we have an existing session
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      userId = session.user.id;
-    }
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.user) {
+    userId = session.user.id;
   }
+
+  // Get or create session ID for unauthenticated users
+  const sessionId = userId ? null : getOrCreateSessionId();
 
   // Create the order
   const { data: order, error: orderError } = await supabase
@@ -201,7 +196,8 @@ export async function createOrder(
       type: orderType,
       status: 'PENDING',
       payment_method: paymentMethod,
-      created_by: userId, // May be null if auth is disabled
+      created_by: userId, // null for unauthenticated users
+      session_id: sessionId, // null for authenticated users
     })
     .select()
     .single();
@@ -234,38 +230,39 @@ export async function createOrder(
 
 // Fetch the current user's active order (PENDING or VALIDATED status)
 export async function fetchActiveOrder(): Promise<Order | null> {
-  // Try to get user ID, but don't fail if anonymous auth is disabled
-  let userId: string | null = null;
-  try {
-    userId = await ensureAnonymousAuth();
-  } catch (authError: any) {
-    // If anonymous auth is disabled, check for existing session
-    console.warn('Anonymous authentication disabled or failed:', authError.message);
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      userId = session.user.id;
-    } else {
-      // No user session, return null (no active order)
-      return null;
-    }
-  }
-
-  // If we still don't have a user ID, return null
-  if (!userId) {
+  // Check if user is authenticated
+  const { data: { session } } = await supabase.auth.getSession();
+  const userId = session?.user?.id || null;
+  
+  // Get session ID for unauthenticated users
+  const sessionId = userId ? null : getSessionId();
+  
+  // If neither userId nor sessionId exists, return null
+  if (!userId && !sessionId) {
     return null;
   }
 
-  const { data, error } = await supabase
+  // Build query based on authentication method
+  let query = supabase
     .from('orders')
     .select(`
       *,
       order_items (
         *,
-        menu_items (*)
+        menu_items (*, categories(slug))
       )
     `)
-    .eq('created_by', userId)
-    .in('status', ['PENDING', 'VALIDATED'])
+    .in('status', ['PENDING', 'VALIDATED']);
+
+  if (userId) {
+    // Authenticated user: query by created_by
+    query = query.eq('created_by', userId);
+  } else if (sessionId) {
+    // Unauthenticated user: query by session_id
+    query = query.eq('session_id', sessionId);
+  }
+
+  const { data, error } = await query
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -290,7 +287,7 @@ export async function fetchOrdersWithItems(status?: OrderStatus): Promise<Order[
       *,
       order_items (
         *,
-        menu_items (*)
+        menu_items (*, categories(slug))
       )
     `)
     .order('created_at', { ascending: false });
@@ -311,11 +308,16 @@ export async function fetchOrdersWithItems(status?: OrderStatus): Promise<Order[
 
 // Convert DB Order to frontend Order
 function dbOrderToFrontend(order: any): Order {
-  const items: OrderItem[] = ((order.order_items || []) as any[]).map((oi: any) => ({
-    menuItem: dbMenuItemToFrontend(oi.menu_items, null),
-    quantity: oi.quantity,
-    notes: oi.notes || undefined,
-  }));
+  const items: OrderItem[] = ((order.order_items || []) as any[]).map((oi: any) => {
+    const categorySlug = oi.menu_items?.categories?.slug || null;
+    return {
+      menuItem: dbMenuItemToFrontend(oi.menu_items, categorySlug),
+      quantity: oi.quantity,
+      notes: oi.notes || undefined,
+      isPrepared: oi.is_prepared || false,
+      orderItemId: oi.id,
+    };
+  });
 
   return {
     id: order.id,
@@ -326,6 +328,8 @@ function dbOrderToFrontend(order: any): Order {
     paymentMethod: order.payment_method as PaymentMethod | null,
     createdAt: new Date(order.created_at).getTime(),
     totalAmount: parseFloat(order.total_amount.toString()),
+    numberOfPeople: order.number_of_people || 1,
+    mainsStarted: order.mains_started || false,
   };
 }
 
@@ -355,11 +359,110 @@ export async function updateOrderTable(orderId: string, tableNumber: string): Pr
   }
 }
 
+// Update order number of people
+export async function updateOrderPeopleCount(orderId: string, numberOfPeople: number): Promise<void> {
+  const { error } = await supabase
+    .from('orders')
+    .update({ number_of_people: numberOfPeople })
+    .eq('id', orderId);
+
+  if (error) {
+    console.error('Error updating order number of people:', error);
+    throw error;
+  }
+}
+
+// Generic update function for order fields
+export async function updateOrder(
+  orderId: string,
+  updates: { numberOfPeople?: number; tableNumber?: string; status?: OrderStatus; mainsStarted?: boolean }
+): Promise<void> {
+  const dbUpdates: any = {};
+  
+  if (updates.numberOfPeople !== undefined) {
+    dbUpdates.number_of_people = updates.numberOfPeople;
+  }
+  if (updates.tableNumber !== undefined) {
+    dbUpdates.table_number = updates.tableNumber;
+  }
+  if (updates.status !== undefined) {
+    dbUpdates.status = updates.status;
+  }
+  if (updates.mainsStarted !== undefined) {
+    dbUpdates.mains_started = updates.mainsStarted;
+  }
+
+  const { error } = await supabase
+    .from('orders')
+    .update(dbUpdates)
+    .eq('id', orderId);
+
+  if (error) {
+    console.error('Error updating order:', error);
+    throw error;
+  }
+}
+
+// Update order item prepared status
+export async function updateOrderItemPrepared(orderItemId: string, isPrepared: boolean): Promise<void> {
+  const { error } = await supabase
+    .from('order_items')
+    .update({ is_prepared: isPrepared })
+    .eq('id', orderItemId);
+
+  if (error) {
+    console.error('Error updating order item prepared status:', error);
+    throw error;
+  }
+}
+
+// Start mains preparation (Pousse signal)
+export async function startMains(orderId: string): Promise<void> {
+  const { error } = await supabase
+    .from('orders')
+    .update({ mains_started: true })
+    .eq('id', orderId);
+
+  if (error) {
+    console.error('Error starting mains:', error);
+    throw error;
+  }
+}
+
 // Subscribe to orders changes
 export function subscribeToOrders(
   callback: (order: Order) => void,
   status?: OrderStatus
 ) {
+  const fetchAndCallback = async (orderId: string) => {
+    const { data } = await supabase
+      .from('orders')
+      .select(`
+        *,
+        order_items (
+          *,
+          menu_items (*, categories(slug))
+        )
+      `)
+      .eq('id', orderId)
+      .single();
+
+    if (data) {
+      const frontendOrder = dbOrderToFrontend(data);
+      console.log('Processed order update:', {
+        id: frontendOrder.id,
+        status: frontendOrder.status,
+        tableNumber: frontendOrder.tableNumber,
+        itemCount: frontendOrder.items.length,
+      });
+      if (!status || frontendOrder.status === status) {
+        callback(frontendOrder);
+      }
+    } else {
+      console.warn('Order not found after realtime event:', orderId);
+    }
+  };
+
   const channel = supabase
     .channel('orders_changes')
     .on(
@@ -370,33 +473,163 @@ export function subscribeToOrders(
         table: 'orders',
       },
       async (payload) => {
+        console.log('Realtime order change received:', {
+          eventType: payload.eventType,
+          orderId: (payload.new as any)?.id || (payload.old as any)?.id,
+          newStatus: (payload.new as any)?.status,
+          newTableNumber: (payload.new as any)?.table_number,
+        });
+
         if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
           const orderId = (payload.new as any).id;
-          const { data } = await supabase
-            .from('orders')
-            .select(`
-              *,
-              order_items (
-                *,
-                menu_items (*)
-              )
-            `)
-            .eq('id', orderId)
-            .single();
+          await fetchAndCallback(orderId);
+        }
+      }
+    )
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'order_items',
+      },
+      async (payload) => {
+        console.log('Realtime order item change received:', {
+          eventType: payload.eventType,
+          orderItemId: (payload.new as any)?.id || (payload.old as any)?.id,
+          orderId: (payload.new as any)?.order_id || (payload.old as any)?.order_id,
+          isPrepared: (payload.new as any)?.is_prepared,
+        });
 
-          if (data) {
-            const frontendOrder = dbOrderToFrontend(data);
-            if (!status || frontendOrder.status === status) {
-              callback(frontendOrder);
-            }
+        if (payload.eventType === 'UPDATE') {
+          const orderId = (payload.new as any)?.order_id || (payload.old as any)?.order_id;
+          if (orderId) {
+            await fetchAndCallback(orderId);
           }
         }
       }
     )
-    .subscribe();
+    .subscribe((status) => {
+      console.log('Realtime subscription status:', status);
+      if (status === 'SUBSCRIBED') {
+        console.log('Successfully subscribed to orders changes');
+      } else if (status === 'CHANNEL_ERROR') {
+        console.error('Realtime channel error - check RLS policies and network connection');
+      } else if (status === 'TIMED_OUT') {
+        console.warn('Realtime subscription timed out');
+      } else if (status === 'CLOSED') {
+        console.warn('Realtime channel closed');
+      }
+    });
 
   return () => {
     supabase.removeChannel(channel);
   };
+}
+
+// Upload image to Supabase Storage
+export async function uploadMenuImage(file: File, menuItemId: string): Promise<string> {
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${menuItemId}-${Date.now()}.${fileExt}`;
+  const filePath = `menu-images/${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('menu-images')
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false
+    });
+
+  if (uploadError) {
+    console.error('Error uploading image:', uploadError);
+    throw uploadError;
+  }
+
+  // Get public URL
+  const { data } = supabase.storage
+    .from('menu-images')
+    .getPublicUrl(filePath);
+
+  return data.publicUrl;
+}
+
+// Fetch today's revenue and orders
+export async function fetchTodayRevenue(): Promise<{ total: number; orders: Order[] }> {
+  // Check authentication
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error('Not authenticated. Please log in as dev.');
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  console.log('Fetching revenue from:', today.toISOString(), 'to', tomorrow.toISOString());
+  console.log('User ID:', session.user.id);
+
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      *,
+      order_items (
+        *,
+        menu_items (*, categories(slug))
+      )
+    `)
+    .eq('status', 'PAID')
+    .gte('created_at', today.toISOString())
+    .lt('created_at', tomorrow.toISOString())
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching today\'s revenue:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    console.error('Error details:', JSON.stringify(error, null, 2));
+    throw new Error(`Failed to fetch revenue: ${error.message} (Code: ${error.code})`);
+  }
+
+  console.log('Fetched orders count:', data?.length || 0);
+  console.log('Raw data sample:', data?.[0] ? JSON.stringify(data[0], null, 2) : 'No data');
+
+  const orders = (data || []).map(dbOrderToFrontend);
+  const total = orders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
+
+  console.log('Total revenue:', total, 'from', orders.length, 'orders');
+
+  return { total, orders };
+}
+
+// Fetch all paid orders (for admin aggregation)
+export async function fetchAllPaidOrders(): Promise<{ total: number; orders: Order[] }> {
+  // Check authentication
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    throw new Error('Not authenticated. Please log in as dev.');
+  }
+
+  const { data, error } = await supabase
+    .from('orders')
+    .select(`
+      *,
+      order_items (
+        *,
+        menu_items (*, categories(slug))
+      )
+    `)
+    .eq('status', 'PAID')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching all paid orders:', error);
+    throw new Error(`Failed to fetch all paid orders: ${error.message}`);
+  }
+
+  const orders = (data || []).map(dbOrderToFrontend);
+  const total = orders.reduce((sum, order) => sum + (order.totalAmount || 0), 0);
+
+  return { total, orders };
 }
 

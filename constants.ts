@@ -54,9 +54,9 @@ export const INITIAL_MENU: MenuItem[] = [
 ];
 
 export const INITIAL_TABLES: Table[] = [
-  { id: '1', label: '1', x: 50, y: 50, type: 'RECT' },
-  { id: '2', label: '2', x: 200, y: 50, type: 'RECT' },
-  { id: '3', label: '3', x: 50, y: 200, type: 'RECT' },
-  { id: '4', label: '4', x: 200, y: 200, type: 'RECT' },
-  { id: '5', label: '5', x: 350, y: 125, type: 'RECT' },
+  { id: '1', label: '1', x: 50, y: 50, type: 'RECT', capacity: 4 },
+  { id: '2', label: '2', x: 200, y: 50, type: 'RECT', capacity: 2 },
+  { id: '3', label: '3', x: 50, y: 200, type: 'RECT', capacity: 6 },
+  { id: '4', label: '4', x: 200, y: 200, type: 'RECT', capacity: 4 },
+  { id: '5', label: '5', x: 350, y: 125, type: 'RECT', capacity: 2 },
 ];

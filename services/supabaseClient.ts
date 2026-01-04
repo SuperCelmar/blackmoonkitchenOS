@@ -14,6 +14,10 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
  * Ensures the user is signed in anonymously.
  * If no session exists, signs in anonymously.
  * Returns the user ID.
+ * 
+ * @deprecated This function is deprecated. Use session-based authentication via sessionService instead.
+ * Anonymous authentication is disabled in Supabase. For unauthenticated users, use getOrCreateSessionId() from sessionService.
+ * This function is kept for backward compatibility but will fail if anonymous auth is disabled.
  */
 export async function ensureAnonymousAuth(): Promise<string> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -27,6 +31,7 @@ export async function ensureAnonymousAuth(): Promise<string> {
   
   if (error) {
     console.error('Error signing in anonymously:', error);
+    console.warn('Note: Anonymous authentication is disabled. Use sessionService.getOrCreateSessionId() instead.');
     throw error;
   }
 
@@ -38,7 +43,7 @@ export async function ensureAnonymousAuth(): Promise<string> {
 }
 
 // Database types
-export type UserRole = 'guest' | 'waiter' | 'admin' | 'chef';
+export type UserRole = 'guest' | 'waiter' | 'admin' | 'chef' | 'dev';
 export type OrderStatus = 'PENDING' | 'VALIDATED' | 'READY' | 'PAID';
 export type OrderType = 'DINE_IN' | 'TAKEAWAY';
 export type PaymentMethod = 'CARD' | 'TICKET_CARD' | 'CASH' | 'PAPER_TICKET';
@@ -83,8 +88,11 @@ export interface Order {
   status: OrderStatus;
   payment_method: PaymentMethod | null;
   total_amount: number;
+  number_of_people: number | null;
+  mains_started: boolean;
   created_by: string | null;
   validated_by: string | null;
+  session_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -96,6 +104,7 @@ export interface OrderItem {
   quantity: number;
   unit_price: number;
   notes: string | null;
+  is_prepared: boolean;
   created_at: string;
 }
 

@@ -44,6 +44,7 @@ export interface Table {
   x: number;
   y: number;
   type: 'RECT' | 'ROUND';
+  capacity: number;
 }
 
 // Frontend-friendly MenuItem (adapted from DB)
@@ -65,6 +66,8 @@ export interface OrderItem {
   menuItem: MenuItem;
   quantity: number;
   notes?: string;
+  isPrepared?: boolean;
+  orderItemId?: string; // DB order_item id for updates
 }
 
 // Frontend Order (adapted from DB)
@@ -77,4 +80,6 @@ export interface Order {
   paymentMethod?: PaymentMethod | null;
   createdAt: number;
   totalAmount?: number;
+  numberOfPeople?: number;
+  mainsStarted?: boolean;
 }

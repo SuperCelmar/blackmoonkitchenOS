@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { MemoryRouter, Routes, Route, Link, useNavigate, useLocation } from 'react-router-dom';
-import { MenuItem, OrderItem, PaymentMethod, OrderType } from '../types';
-import { fetchActiveOrder } from '../services/menuService';
+import { MenuItem, OrderItem, PaymentMethod, OrderType, Order } from '../types';
+import { fetchActiveOrder, subscribeToOrders } from '../services/menuService';
 
 interface ClientViewProps {
   menu: MenuItem[];
@@ -367,8 +367,76 @@ const PaymentScreen = ({ onSubmit }: { onSubmit: (method: PaymentMethod) => void
     );
 };
 
-const WaitingScreen = ({ cart }: { cart: OrderItem[] }) => {
+const WaitingScreen = ({ cart, order }: { cart: OrderItem[], order?: Order | null }) => {
     const total = cart.reduce((acc, item) => acc + (item.menuItem.price * item.quantity), 0);
+    const orderStatus = order?.status;
+    
+    // Determine status display based on order status
+    const getStatusDisplay = () => {
+        if (!orderStatus) {
+            return {
+                title: 'En attente de confirmation',
+                message: 'Votre commande a été envoyée au serveur. Veuillez patienter un instant pour la validation.',
+                icon: 'hourglass_top',
+                iconColor: 'text-primary',
+                bgColor: 'bg-primary/20',
+                statusBadge: null,
+                buttonText: 'Attente du serveur...',
+                buttonIcon: 'sync'
+            };
+        }
+        
+        switch (orderStatus) {
+            case 'VALIDATED':
+                return {
+                    title: 'Commande confirmée !',
+                    message: 'Votre commande a été validée et est maintenant en préparation en cuisine.',
+                    icon: 'check_circle',
+                    iconColor: 'text-green-500',
+                    bgColor: 'bg-green-500/20',
+                    statusBadge: { text: 'En Cuisine', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-200' },
+                    buttonText: 'En préparation...',
+                    buttonIcon: 'restaurant'
+                };
+            case 'READY':
+                return {
+                    title: 'Commande prête !',
+                    message: 'Votre commande est prête. Le serveur va bientôt vous l\'apporter.',
+                    icon: 'restaurant',
+                    iconColor: 'text-green-500',
+                    bgColor: 'bg-green-500/20',
+                    statusBadge: { text: 'Prête', color: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200' },
+                    buttonText: 'Commande prête',
+                    buttonIcon: 'check_circle'
+                };
+            case 'PAID':
+                return {
+                    title: 'Commande terminée',
+                    message: 'Merci pour votre commande ! Nous espérons vous revoir bientôt.',
+                    icon: 'check_circle',
+                    iconColor: 'text-gray-500',
+                    bgColor: 'bg-gray-500/20',
+                    statusBadge: { text: 'Payée', color: 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300' },
+                    buttonText: 'Commande terminée',
+                    buttonIcon: 'check_circle'
+                };
+            default:
+                return {
+                    title: 'En attente de confirmation',
+                    message: 'Votre commande a été envoyée au serveur. Veuillez patienter un instant pour la validation.',
+                    icon: 'hourglass_top',
+                    iconColor: 'text-primary',
+                    bgColor: 'bg-primary/20',
+                    statusBadge: null,
+                    buttonText: 'Attente du serveur...',
+                    buttonIcon: 'sync'
+                };
+        }
+    };
+    
+    const statusDisplay = getStatusDisplay();
+    const orderId = order?.id ? `#${order.id.slice(-4)}` : `#${Math.floor(Math.random()*9000)+1000}`;
+    
     return (
         <div className="relative min-h-screen w-full max-w-md mx-auto bg-background-light dark:bg-background-dark shadow-2xl overflow-hidden border-x border-slate-100 dark:border-slate-900 flex flex-col">
             <header className="sticky top-0 z-50 w-full transition-all duration-300">
@@ -385,22 +453,34 @@ const WaitingScreen = ({ cart }: { cart: OrderItem[] }) => {
             </header>
             <main className="flex-1 px-6 pt-10 pb-32 flex flex-col items-center justify-center text-center space-y-8">
                 <div className="relative flex items-center justify-center">
-                    <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse-slow"></div>
-                    <div className="relative size-24 bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 rounded-full shadow-float flex items-center justify-center border border-slate-100 dark:border-slate-700">
-                        <Icon name="hourglass_top" className="text-primary !text-[48px] animate-pulse" />
+                    <div className={`absolute inset-0 ${statusDisplay.bgColor} rounded-full blur-xl ${orderStatus === 'PENDING' ? 'animate-pulse-slow' : ''}`}></div>
+                    <div className={`relative size-24 bg-gradient-to-br from-white to-slate-50 dark:from-slate-800 dark:to-slate-900 rounded-full shadow-float flex items-center justify-center border border-slate-100 dark:border-slate-700 ${orderStatus === 'READY' ? 'ring-4 ring-green-500/50' : ''}`}>
+                        <Icon name={statusDisplay.icon} className={`${statusDisplay.iconColor} !text-[48px] ${orderStatus === 'PENDING' ? 'animate-pulse' : ''}`} />
                     </div>
                 </div>
                 <div className="space-y-3 max-w-xs mx-auto">
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">En attente de confirmation</h2>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">{statusDisplay.title}</h2>
                     <p className="text-base text-slate-500 dark:text-slate-400 leading-relaxed">
-                        Votre commande a été envoyée au serveur. Veuillez patienter un instant pour la validation.
+                        {statusDisplay.message}
                     </p>
+                    {statusDisplay.statusBadge && (
+                        <div className="flex justify-center mt-2">
+                            <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${statusDisplay.statusBadge.color}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                    orderStatus === 'VALIDATED' ? 'bg-blue-500' :
+                                    orderStatus === 'READY' ? 'bg-green-500' :
+                                    'bg-gray-500'
+                                }`}></span>
+                                {statusDisplay.statusBadge.text}
+                            </span>
+                        </div>
+                    )}
                 </div>
                 <div className="w-full bg-white dark:bg-slate-800/50 rounded-3xl p-5 shadow-apple dark:shadow-none dark:border dark:border-slate-800 text-left">
                     <div className="flex items-center justify-between mb-4 pb-4 border-b border-slate-100 dark:border-slate-700/50">
                         <div>
                             <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Commande</p>
-                            <p className="font-bold text-slate-900 dark:text-white">#{Math.floor(Math.random()*9000)+1000}</p>
+                            <p className="font-bold text-slate-900 dark:text-white">{orderId}</p>
                         </div>
                         <div className="text-right">
                             <p className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">Total</p>
@@ -418,22 +498,32 @@ const WaitingScreen = ({ cart }: { cart: OrderItem[] }) => {
                         ))}
                     </div>
                 </div>
-                <p className="text-xs text-slate-400 dark:text-slate-600 italic px-4">
-                    Ne fermez pas cette page. La confirmation apparaîtra automatiquement ici.
-                </p>
+                {orderStatus !== 'PAID' && (
+                    <p className="text-xs text-slate-400 dark:text-slate-600 italic px-4">
+                        Ne fermez pas cette page. Les mises à jour apparaîtront automatiquement ici.
+                    </p>
+                )}
             </main>
             <div className="fixed bottom-0 left-0 right-0 z-50 p-4 pb-8 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-xl border-t border-slate-200/50 dark:border-slate-800/50">
                 <div className="absolute -top-12 left-0 w-full h-12 bg-gradient-to-t from-background-light/80 to-transparent dark:from-background-dark/80 pointer-events-none"></div>
                 <div className="w-full max-w-md mx-auto">
                     <button 
-                        className="w-full flex items-center justify-center gap-2 rounded-2xl bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 p-4 cursor-not-allowed" 
+                        className={`w-full flex items-center justify-center gap-2 rounded-2xl p-4 ${
+                            orderStatus === 'PAID' 
+                                ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 dark:text-gray-500' 
+                                : orderStatus === 'READY'
+                                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300'
+                                : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
+                        } cursor-not-allowed`}
                         disabled
-                        onClick={() => window.location.reload()}
+                        onClick={() => orderStatus === 'PAID' && (window.location.href = '/')}
                     >
-                        <Icon name="sync" className="!text-xl animate-spin" />
-                        <span className="text-base font-medium">Attente du serveur...</span>
+                        <Icon name={statusDisplay.buttonIcon} className={`!text-xl ${orderStatus === 'PENDING' ? 'animate-spin' : ''}`} />
+                        <span className="text-base font-medium">{statusDisplay.buttonText}</span>
                     </button>
-                    <button onClick={() => window.location.href="/"} className="mt-2 text-xs text-slate-400 underline w-full text-center">Nouvelle commande (Reset)</button>
+                    {orderStatus !== 'PAID' && (
+                        <button onClick={() => window.location.href="/"} className="mt-2 text-xs text-slate-400 underline w-full text-center">Nouvelle commande (Reset)</button>
+                    )}
                 </div>
             </div>
         </div>
@@ -448,16 +538,18 @@ const ClientViewInner: React.FC<{ menu: MenuItem[], onSubmitOrder: (items: Order
     const [cart, setCart] = useState<OrderItem[]>([]);
     const [orderType, setOrderType] = useState<OrderType>(OrderType.DINE_IN);
     const [isCheckingOrder, setIsCheckingOrder] = useState(true);
+    const [activeOrder, setActiveOrder] = useState<Order | null>(null);
 
     // Check for active order on mount
     useEffect(() => {
         const checkActiveOrder = async () => {
             try {
-                const activeOrder = await fetchActiveOrder();
-                if (activeOrder) {
+                const order = await fetchActiveOrder();
+                if (order) {
                     // Restore cart and order type from active order
-                    setCart(activeOrder.items);
-                    setOrderType(activeOrder.type);
+                    setCart(order.items);
+                    setOrderType(order.type);
+                    setActiveOrder(order);
                     // Navigate to waiting screen
                     navigate('/waiting', { replace: true });
                 }
@@ -474,6 +566,24 @@ const ClientViewInner: React.FC<{ menu: MenuItem[], onSubmitOrder: (items: Order
 
         checkActiveOrder();
     }, [navigate]);
+
+    // Subscribe to real-time order updates when activeOrder exists
+    useEffect(() => {
+        if (!activeOrder) return;
+
+        const unsubscribe = subscribeToOrders((updatedOrder) => {
+            // Only update if it's the same order
+            if (updatedOrder.id === activeOrder.id) {
+                setActiveOrder(updatedOrder);
+                // Update cart if order items changed
+                setCart(updatedOrder.items);
+            }
+        });
+
+        return () => {
+            unsubscribe();
+        };
+    }, [activeOrder?.id]);
 
     const addToCart = (item: MenuItem) => {
         setCart(prev => {
@@ -495,8 +605,22 @@ const ClientViewInner: React.FC<{ menu: MenuItem[], onSubmitOrder: (items: Order
         });
     };
 
-    const handleOrderSubmit = (paymentMethod: PaymentMethod) => {
+    const handleOrderSubmit = async (paymentMethod: PaymentMethod) => {
         onSubmitOrder(cart, paymentMethod, orderType);
+        // Fetch the active order immediately after submission to set activeOrder state
+        // This ensures the real-time subscription can start tracking it
+        try {
+            // Small delay to allow order creation to complete
+            setTimeout(async () => {
+                const order = await fetchActiveOrder();
+                if (order) {
+                    setActiveOrder(order);
+                }
+            }, 500);
+        } catch (error) {
+            // Silently handle - subscription will pick it up
+            console.error('Error fetching active order after submission:', error);
+        }
     };
 
     // Filter menu items by category slug
@@ -552,7 +676,7 @@ const ClientViewInner: React.FC<{ menu: MenuItem[], onSubmitOrder: (items: Order
             />
             <Route path="/confirmation" element={<ConfirmationScreen cart={cart} />} />
             <Route path="/payment" element={<PaymentScreen onSubmit={handleOrderSubmit} />} />
-            <Route path="/waiting" element={<WaitingScreen cart={cart} />} />
+            <Route path="/waiting" element={<WaitingScreen cart={cart} order={activeOrder} />} />
         </Routes>
     );
 };
