@@ -173,6 +173,7 @@ const App: React.FC = () => {
 
     // Subscribe to order changes
     const unsubscribe = subscribeToOrders((order) => {
+      console.log(`[Realtime] Received update for order ${order.id.slice(-4)}: status=${order.status}, items=${order.items.length}`);
       setOrders(prev => {
         const existingIndex = prev.findIndex(o => o.id === order.id);
         if (existingIndex >= 0) {
@@ -226,9 +227,12 @@ const App: React.FC = () => {
   };
 
   const handleStatusUpdate = async (orderId: string, status: OrderStatus) => {
+    // Optimistic update
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+
     try {
       await updateOrderStatus(orderId, status);
-      // Order will be updated via subscription
+      console.log(`[Order] Status updated successfully: ${orderId} -> ${status}`);
     } catch (error) {
       console.error('Failed to update order status:', error);
       alert('Erreur lors de la mise à jour du statut. Veuillez réessayer.');
@@ -236,12 +240,33 @@ const App: React.FC = () => {
   };
 
   const handleAssignTable = async (orderId: string, tableLabel: string) => {
+    // Optimistic update
+    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, tableNumber: tableLabel } : o));
+
     try {
       await updateOrderTable(orderId, tableLabel);
-      // Order will be updated via subscription
+      console.log(`[Order] Table assigned successfully: ${orderId} -> ${tableLabel}`);
     } catch (error) {
       console.error('Failed to assign table:', error);
       alert('Erreur lors de l\'attribution de la table. Veuillez réessayer.');
+    }
+  };
+
+  const handleItemPreparedUpdate = async (orderId: string, orderItemId: string, isPrepared: boolean) => {
+    // Optimistic update
+    setOrders(prev => prev.map(o => {
+      if (o.id !== orderId) return o;
+      return {
+        ...o,
+        items: o.items.map(i => i.orderItemId === orderItemId ? { ...i, isPrepared } : i)
+      };
+    }));
+
+    try {
+      await updateOrderItemPrepared(orderItemId, isPrepared);
+      console.log(`[Order] Item prepared status updated: ${orderItemId} -> ${isPrepared}`);
+    } catch (error) {
+      console.error('Failed to update item prepared status:', error);
     }
   };
 
@@ -303,7 +328,13 @@ const App: React.FC = () => {
             />
         );
       case View.KITCHEN:
-        return <KitchenView orders={orders} onUpdateStatus={handleStatusUpdate} />;
+        return (
+          <KitchenView 
+            orders={orders} 
+            onUpdateStatus={handleStatusUpdate} 
+            onUpdateItemPrepared={handleItemPreparedUpdate}
+          />
+        );
       case View.ADMIN:
         return <AdminView menu={adminMenu} categories={categories} onUpdateMenu={handleUpdateMenu} />;
       default:

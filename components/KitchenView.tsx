@@ -6,19 +6,23 @@ import { updateOrderItemPrepared } from '../services/menuService';
 interface KitchenViewProps {
   orders: Order[];
   onUpdateStatus: (orderId: string, status: OrderStatus) => void;
+  onUpdateItemPrepared: (orderId: string, orderItemId: string, isPrepared: boolean) => void;
 }
 
-const KitchenView: React.FC<KitchenViewProps> = ({ orders, onUpdateStatus }) => {
+const KitchenView: React.FC<KitchenViewProps> = ({ orders, onUpdateStatus, onUpdateItemPrepared }) => {
   const kitchenOrders = orders.filter(o => o.status === OrderStatus.VALIDATED).sort((a,b) => a.createdAt - b.createdAt);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [sidebarTab, setSidebarTab] = useState<'queue' | 'summary'>('queue');
   const previousOrderCountRef = useRef(0);
 
-  // Auto-select first if none selected
+  // Auto-select first if none selected or if selected order is no longer in queue
   useEffect(() => {
-    if (!selectedId && kitchenOrders.length > 0) {
+    const isSelectedInQueue = kitchenOrders.some(o => o.id === selectedId);
+    if ((!selectedId || !isSelectedInQueue) && kitchenOrders.length > 0) {
         setSelectedId(kitchenOrders[0].id);
+    } else if (kitchenOrders.length === 0 && selectedId) {
+        setSelectedId(null);
     }
   }, [kitchenOrders, selectedId]);
 
@@ -114,14 +118,10 @@ const KitchenView: React.FC<KitchenViewProps> = ({ orders, onUpdateStatus }) => 
   };
 
   const handleItemClick = async (item: OrderItem) => {
-    if (!item.orderItemId) return;
+    if (!item.orderItemId || !focusedOrder) return;
     
     const newPreparedStatus = !item.isPrepared;
-    try {
-      await updateOrderItemPrepared(item.orderItemId, newPreparedStatus);
-    } catch (error) {
-      console.error('Error updating item prepared status:', error);
-    }
+    onUpdateItemPrepared(focusedOrder.id, item.orderItemId, newPreparedStatus);
   };
 
   const renderItemCard = (item: OrderItem, idx: number) => {
@@ -264,7 +264,6 @@ const KitchenView: React.FC<KitchenViewProps> = ({ orders, onUpdateStatus }) => 
                 <button 
                     onClick={() => {
                         onUpdateStatus(focusedOrder.id, OrderStatus.READY);
-                        setSelectedId(null);
                     }}
                     className="w-full bg-green-600 hover:bg-green-500 active:bg-green-700 transition-colors text-white py-5 rounded-xl text-2xl font-bold shadow-lg flex items-center justify-center gap-4 group"
                 >

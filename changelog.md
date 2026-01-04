@@ -1,3 +1,18 @@
+## 2026-01-04 (Late Night - Part 8)
+
+### Fixed
+- **Kitchen View & Order Status Responsiveness**
+  - Implemented optimistic updates for order status changes and table assignments in `App.tsx` to provide instant UI feedback before database confirmation.
+  - Fixed a race condition in `KitchenView.tsx` where manual selection reset was conflicting with auto-selection logic.
+  - Added optimistic update for individual item preparation status in the kitchen view.
+  - Refined auto-selection logic in `KitchenView` to automatically select the next pending order when the current one is completed.
+  - Enhanced Realtime subscription logging in `App.tsx` to better track order synchronization.
+
+### Files Modified
+- `App.tsx` - Added optimistic update handlers for status, tables, and items; added detailed Realtime logging.
+- `components/KitchenView.tsx` - Updated props to include item preparation handler, removed redundant state reset, and improved auto-selection robustness.
+- `changelog.md` - Documented responsiveness and race condition fixes.
+
 ## 2026-01-04 (Late Night - Part 7)
 
 ### Fixed
