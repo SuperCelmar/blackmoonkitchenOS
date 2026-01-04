@@ -54,6 +54,7 @@ export interface Category {
   id: string;
   name_fr: string;
   name_en: string | null;
+  name_cn: string | null;
   slug: string;
   display_order: number;
   created_at: string;

@@ -20,6 +20,7 @@ CREATE TABLE categories (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name_fr TEXT NOT NULL,
   name_en TEXT,
+  name_cn TEXT,
   slug TEXT UNIQUE NOT NULL,
   display_order INTEGER DEFAULT 0,
   created_at TIMESTAMPTZ DEFAULT NOW()

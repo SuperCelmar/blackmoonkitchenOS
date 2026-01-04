@@ -1,5 +1,134 @@
 # Changelog
 
+## 2026-01-05
+
+### Changed
+- **Python Scripts Organization**
+  - Moved all Python scripts into `scripts/` folder for better project organization
+  - Updated file paths in all scripts to reference CSV files in parent directory (`../`)
+  - Scripts affected:
+    - `enrich_menu.py` - Updated default input/output paths to `../menu.csv` and `../menu_enriched.csv`
+    - `update_missing_fields.py` - Updated CSV path and `.env` file paths to parent directory
+    - `generate_menu_sql.py` - Updated CSV input and SQL output paths to parent directory
+    - `process_csv.py` - Updated all file references (`good_ids.txt`, CSV files) to parent directory
+  - All scripts now run from `scripts/` directory and correctly reference data files in project root
+
+### Files Moved
+- `enrich_menu.py` → `scripts/enrich_menu.py`
+- `generate_menu_sql.py` → `scripts/generate_menu_sql.py`
+- `process_csv.py` → `scripts/process_csv.py`
+- `update_missing_fields.py` → `scripts/update_missing_fields.py`
+
+### Files Modified
+- `scripts/enrich_menu.py` - Updated file paths to reference parent directory
+- `scripts/update_missing_fields.py` - Updated CSV and env file paths
+- `scripts/generate_menu_sql.py` - Updated CSV input and SQL output paths
+- `scripts/process_csv.py` - Updated all file references to parent directory
+- `changelog.md` - Documented Python scripts reorganization
+
+## 2026-01-04 (Night - Part 2)
+
+### Fixed
+- **NOT NULL Constraint Violation in Menu Update Script**
+  - Removed all `upsert()` operations - script now ONLY uses `update()` to modify existing rows
+  - Changed from upsert to regular UPDATE operations to avoid NOT NULL constraint violations on `code` field
+  - Upsert was attempting to insert new rows without required `code` values, causing database errors
+  - Regular UPDATE preserves existing row data and only modifies specified fields (`image_url`, `name_cn`)
+  - Error message: `'null value in column "code" of relation "menu_items" violates not-null constraint'` now resolved
+  - Script now explicitly updates existing rows only - no insert operations whatsoever
+
+### Changed
+- **Update Functions Refactored**
+  - Renamed `update_menu_item()` to `update_menu_item_by_id()` for clarity
+  - Added `update_menu_item_by_code()` function for code-based updates
+  - Both functions use UPDATE operations only (never INSERT)
+  - Updated logic to try code-based update first, then fallback to ID-based update
+  - Added explicit comments: "UPDATE ONLY, no insert" in function docstrings
+
+### Files Modified
+- `update_missing_fields.py` - Removed all upsert logic, replaced with UPDATE-only operations for both code and ID-based updates
+- `changelog.md` - Documented fix for NOT NULL constraint violation and UPDATE-only approach
+
+## 2026-01-04 (Night)
+
+### Added
+- **Menu Fields Update Script**
+  - Created `update_missing_fields.py` script to sync missing `image_url` and `name_cn` fields from `menu_enriched.csv` to Supabase
+  - Script queries Supabase for menu items with missing fields and matches them with CSV data
+  - Implements intelligent matching logic:
+    - Primary match by `code` field (case-sensitive)
+    - Fallback match by `id` (UUID) for items without codes
+  - Safety features:
+    - Default dry-run mode to preview changes without modifying database
+    - `--execute` flag required to actually perform updates
+    - `--limit` flag for testing with subset of items
+    - Comprehensive logging and summary reporting
+    - Handles edge cases: empty strings vs NULL, multiple matches, missing CSV data
+  - Added `supabase>=2.0.0` package to `requirements.txt` for Python Supabase client
+
+### Files Created
+- `update_missing_fields.py` - Script to update missing menu fields from CSV to Supabase
+
+### Files Modified
+- `requirements.txt` - Added supabase package dependency
+- `changelog.md` - Documented new update script
+
+## 2026-01-04 (Evening)
+
+### Completed
+- **Menu Data Migration to Supabase**
+  - Successfully migrated all 129 menu items from `menu_enriched.csv` to Supabase `menu_items` table
+  - Created SQL migration script `menu_migration.sql` with proper category mapping
+  - Generated categories for missing items: 'Plaque chauffante', 'Pimenté', 'Desserts', 'Vins', 'Bo Bun', 'Nouilles Sautées', 'Boissons', 'Café', 'Thé', 'Eau Minérale', 'Apéritifs', 'Bières', 'Soupes Traditionnelles', 'Pho', 'Udon', 'Bols de riz blanc'
+  - Executed migration in batches (7 batches of 20 statements each) to handle large SQL files
+  - All menu items now properly mapped to correct categories using slug-based lookups
+  - Items with codes use `ON CONFLICT (code) DO UPDATE` for upsert behavior
+  - Items without codes use `WHERE NOT EXISTS` to prevent duplicates based on `name_fr`
+
+### Files Created
+- `menu_migration.sql` - Complete SQL migration with categories and menu items
+- `menu_items_only.sql` - Extracted menu items SQL for separate execution
+- `generate_menu_sql.py` - Python script to generate SQL from CSV data
+
+### Files Modified
+- `changelog.md` - Added entry for menu migration completion
+
+## 2026-01-04
+
+### Added
+- **Menu Image Enrichment Pipeline**
+  - Created `enrich_menu.py` script with tiered API strategy for fetching menu item images
+  - Implemented multi-tier search approach:
+    1. Spoonacular API for food-specific dishes (Pho, Gyoza, Bo Bun, etc.)
+    2. Google Custom Search API for specific products and brands (wines, beverages)
+    3. Unsplash API as aesthetic fallback for generic items
+    4. Placeholder fallback for items without matches
+  - Added safety features:
+    - Default dry-run mode to preview changes without modifying files
+    - Automatic backup creation (`menu.csv.bak`) before processing
+    - `--limit` flag for testing with subset of items
+    - `--execute` flag required to actually save changes
+    - Outputs to `menu_enriched.csv` (does not overwrite original)
+  - Created `requirements.txt` with Python dependencies (pandas, requests, python-dotenv)
+  - Script includes rate limiting, error handling, and progress reporting
+  - Supports item type detection (dish, drink, wine) for optimized search queries
+
+### Changed
+- **Menu Data Cleanup**
+  - Processed `menu_enriched.csv` to remove `id` values for rows that were not part of the core 32 items.
+  - Preserved all 130 menu items from the original dataset.
+  - For the 32 core items, cleared `name_cn` and `image_url` fields as requested.
+  - Normalized boolean values to lowercase (`true`/`false`).
+  - Created a safety backup `menu_enriched.csv.bak_20260104` before processing.
+
+### Files Created
+- `enrich_menu.py` - Menu image enrichment script with tiered API strategy
+- `requirements.txt` - Python dependencies for enrichment script
+- `menu.csv.bak` - Backup of original menu data
+
+### Files Modified
+- `changelog.md` - Added entry for menu enrichment pipeline
+
 ## 2026-01-03 (Late Evening - Part 2)
 
 ### Fixed
