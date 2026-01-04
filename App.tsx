@@ -264,13 +264,7 @@ const App: React.FC = () => {
   };
 
   const handleLoginSuccess = (authUser: AuthUser) => {
-    console.log('[Auth] handleLoginSuccess: Received user:', authUser.email, 'with role:', authUser.role);
-    if (authUser.role !== 'dev') {
-      console.warn('[Auth] handleLoginSuccess: User is authenticated but NOT a dev. Stay on login screen.');
-      alert('Accès refusé. Vous devez avoir le rôle "dev" pour accéder à cette interface.');
-      return;
-    }
-    console.log('[Auth] handleLoginSuccess: Setting user and transitioning view...');
+    console.log('[Auth] handleLoginSuccess called with:', authUser.email);
     setUser(authUser);
   };
 

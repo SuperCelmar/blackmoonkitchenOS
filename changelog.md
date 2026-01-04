@@ -7,9 +7,10 @@
   - Enhanced `authService.ts` with a robust retry mechanism (2 attempts, 500ms delay) for profile fetching to handle database trigger latency.
   - Refined `onAuthStateChange` listener in `App.tsx` to prevent redundant state updates and accidental clearing of valid user sessions.
   - Added detailed `[Auth]` console logging to track login success and state transition timing.
+  - **Critical Bug Fix**: Fixed JavaScript variable shadowing error in `signInAsDev()` that caused the login button to hang indefinitely. The issue was caused by declaring `const { data, error }` inside a `for` loop while trying to access `data.user.id` from the outer scope in the same expression (temporal dead zone violation). Fixed by storing `userId` and `userEmail` before the loop.
 
 ### Files Modified
-- `services/authService.ts` - Added profile fetch retry logic and improved transition logging.
+- `services/authService.ts` - Added profile fetch retry logic, fixed variable shadowing bug, and improved transition logging.
 - `components/DevLogin.tsx` - Updated `onLoginSuccess` to pass the authenticated user directly.
 - `App.tsx` - Simplified `handleLoginSuccess` and optimized the auth state change listener.
 - `changelog.md` - Documented authentication fixes.

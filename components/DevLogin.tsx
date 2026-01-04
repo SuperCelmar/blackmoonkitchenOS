@@ -13,23 +13,16 @@ const DevLogin: React.FC<DevLoginProps> = ({ onLoginSuccess }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[DevLogin] handleSubmit: Starting login process...');
     setError(null);
     setLoading(true);
 
     try {
-      console.log('[DevLogin] handleSubmit: Calling signInAsDev...');
       const user = await signInAsDev(email, password);
-      console.log('[DevLogin] handleSubmit: signInAsDev success, user role:', user.role);
-      
-      console.log('[DevLogin] handleSubmit: Calling onLoginSuccess...');
       onLoginSuccess(user);
-      console.log('[DevLogin] handleSubmit: onLoginSuccess completed');
     } catch (err: any) {
-      console.error('[DevLogin] handleSubmit: Login caught error:', err);
+      console.error('Login error:', err);
       setError(err.message || 'Erreur lors de la connexion. Vérifiez vos identifiants.');
     } finally {
-      console.log('[DevLogin] handleSubmit: Setting loading to false');
       setLoading(false);
     }
   };

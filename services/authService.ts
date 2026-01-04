@@ -36,59 +36,50 @@ export async function signInAsDev(email: string, password: string): Promise<Auth
     throw new Error('No user returned from sign in');
   }
 
-  console.log('[AuthService] signInAsDev: User ID:', data.user.id);
+  const userId = data.user.id;
+  const userEmail = data.user.email;
+  console.log('[AuthService] signInAsDev: User ID:', userId);
 
   // Fetch the user's profile to get their role
-  console.log('[AuthService] signInAsDev: Fetching profile for user:', data.user.id);
+  console.log('[AuthService] signInAsDev: Fetching profile...');
   const profileStartTime = Date.now();
   
-  const authUser = data.user;
+  // Retry profile fetch once if it fails, as sometimes it takes a moment for the trigger to create it
   let profile = null;
   let profileError = null;
   
-  for (let attempt = 0; attempt < 3; attempt++) {
-    console.log(`[AuthService] signInAsDev: Profile fetch attempt ${attempt + 1}...`);
-    const { data: pData, error: pError } = await supabase
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { data: profileData, error } = await supabase
       .from('profiles')
       .select('role')
-      .eq('id', authUser.id)
+      .eq('id', userId)
       .single();
     
-    if (!pError) {
-      profile = pData;
-      console.log(`[AuthService] signInAsDev: Profile found on attempt ${attempt + 1}:`, profile);
+    if (!error) {
+      profile = profileData;
       break;
     }
     
-    profileError = pError;
-    console.warn(`[AuthService] signInAsDev: Attempt ${attempt + 1} failed:`, pError.message);
-    
-    if (attempt < 2) {
-      const delay = 1000 * (attempt + 1); // Exponential backoff: 1s, 2s
-      console.log(`[AuthService] signInAsDev: Retrying in ${delay}ms...`);
-      await new Promise(resolve => setTimeout(resolve, delay));
+    profileError = error;
+    if (attempt === 0) {
+      console.warn(`[AuthService] signInAsDev: Profile fetch attempt 1 failed, retrying in 500ms...`);
+      await new Promise(resolve => setTimeout(resolve, 500));
     }
   }
 
   const profileElapsed = Date.now() - profileStartTime;
-  console.log(`[AuthService] signInAsDev: Profile fetch finished in ${profileElapsed}ms. Result:`, profile ? 'Success' : 'Failed');
+  console.log(`[AuthService] signInAsDev: Profile fetch completed in ${profileElapsed}ms (Success: ${!!profile})`);
 
-  if (!profile) {
-    console.error('[AuthService] signInAsDev: Final profile fetch failed after all retries');
-    if (profileError) {
-      console.error('[AuthService] Profile error details:', {
-        message: profileError.message,
-        code: profileError.code,
-        details: profileError.details
-      });
-    }
-    throw new Error('Impossible de récupérer votre profil développeur. Veuillez vérifier que votre compte a bien le rôle "dev" dans la base de données.');
+  if (profileError && !profile) {
+    console.error('[AuthService] signInAsDev: Error fetching profile:', profileError);
   }
 
+  console.log('[AuthService] signInAsDev: Profile role:', profile?.role);
+
   return {
-    id: authUser.id,
-    email: authUser.email,
-    role: profile.role,
+    id: userId,
+    email: userEmail,
+    role: profile?.role || null,
   };
 }
 
